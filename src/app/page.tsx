@@ -105,7 +105,7 @@ export default function Home() {
           </div>
           <Button onClick={handleAdd}>
             <PlusCircle className="mr-2 h-4 w-4" />
-            Add New Project
+            Project
           </Button>
         </header>
 
