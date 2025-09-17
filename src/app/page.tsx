@@ -104,7 +104,7 @@ export default function Home() {
             </DropdownMenu>
           </div>
           <Button onClick={handleAdd}>
-            <PlusCircle className="mr-2 h-4 w-4" />
+            <PlusCircle className="h-4 w-4" />
           </Button>
         </header>
 
