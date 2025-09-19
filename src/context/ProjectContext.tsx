@@ -1,36 +1,47 @@
+'use client';
 
-"use client";
-
-import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from "react";
-import type { Project } from "@/lib/types";
-import { useToast } from "@/hooks/use-toast";
-import container from "@/lib/container";
+import "@/lib/container";
+import React, { createContext, useState, useEffect, ReactNode, useContext } from "react";
+import { container } from "tsyringe";
+import { Project } from "@/lib/types";
 import { ApiService } from "@/lib/apiService";
-
-interface ProjectContextType {
-    projects: Project[];
-    isLoading: boolean;
-    addProject: (project: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
-    updateProject: (project: Project) => Promise<void>;
-    deleteProject: (id: string) => Promise<void>;
-}
-
-const ProjectContext = createContext<ProjectContextType | undefined>(undefined);
+import { useToast } from "@/hooks/use-toast";
 
 // Helper to ensure all date fields are Date objects
 function coerceDates(projectData: any): Project {
     const project = { ...projectData };
-    if (project.dueDate && typeof project.dueDate === 'string') {
-        project.dueDate = new Date(project.dueDate);
-    }
-    if (project.createdAt && typeof project.createdAt === 'string') {
-        project.createdAt = new Date(project.createdAt);
-    }
-    if (project.updatedAt && typeof project.updatedAt === 'string') {
-        project.updatedAt = new Date(project.updatedAt);
-    }
+    const toDate = (field: any): Date | undefined => {
+        if (!field) return undefined;
+        if (field instanceof Date) return field;
+        if (typeof field === 'string') return new Date(field);
+        // Handle Firestore Timestamp object
+        if (typeof field === 'object' && field.seconds !== undefined && field.nanoseconds !== undefined) {
+            return new Date(field.seconds * 1000);
+        }
+        // If we don't recognize the format, return undefined to prevent crashes
+        return undefined;
+    };
+
+    project.dueDate = toDate(project.dueDate);
+    project.createdAt = toDate(project.createdAt);
+    project.updatedAt = toDate(project.updatedAt);
+
     return project as Project;
 }
+
+export const ProjectContext = createContext<{
+    projects: Project[];
+    isLoading: boolean;
+    addProject: (project: Omit<Project, "id" | "createdAt" | "updatedAt">) => Promise<void>;
+    updateProject: (id: string, project: Partial<Project>) => Promise<void>;
+    deleteProject: (id: string) => Promise<void>;
+}>({
+    projects: [],
+    isLoading: true,
+    addProject: async (project: Omit<Project, "id" | "createdAt" | "updatedAt">) => {},
+    updateProject: async (id: string, project: Partial<Project>) => {},
+    deleteProject: async (id: string) => {}
+});
 
 export function ProjectProvider({ children }: { children: ReactNode }) {
     const [projects, setProjects] = useState<Project[]>([]);
@@ -38,40 +49,39 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     const { toast } = useToast();
     const [apiService] = useState(() => container.resolve<ApiService>("ApiService"));
 
-    const loadProjects = useCallback(async () => {
-        setIsLoading(true);
-        try {
-            const fetchedProjects = await apiService.getProjects();
-            setProjects(fetchedProjects);
-        } catch (error) {
-            toast({ variant: "destructive", title: "Error loading projects", description: (error as Error).message });
-        } finally {
-            setIsLoading(false);
-        }
-    }, [toast, apiService]);
-
     useEffect(() => {
-        loadProjects();
-    }, [loadProjects]);
+        const fetchProjects = async () => {
+            setIsLoading(true);
+            try {
+                const fetchedProjects = await apiService.getProjects();
+                setProjects(fetchedProjects.map(coerceDates));
+            } catch (error) {
+                toast({ title: "Error fetching projects", description: "Could not fetch projects. Please try again later.", variant: "destructive" });
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        fetchProjects();
+    }, [apiService, toast]);
 
-    const addProject = async (project: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const addProject = async (project: Omit<Project, "id" | "createdAt" | "updatedAt">) => {
         try {
             const newProject = await apiService.addProject(project);
-            setProjects(prev => [newProject, ...prev]);
-            toast({ title: "Success", description: "Project added successfully." });
+            setProjects(prev => [coerceDates(newProject), ...prev]);
+            toast({ title: "Project added", description: "The new project has been added successfully." });
         } catch (error) {
-            toast({ variant: "destructive", title: "Error adding project", description: (error as Error).message });
+            toast({ title: "Error adding project", description: "Could not add the project. Please try again.", variant: "destructive" });
             throw error;
         }
     };
 
-    const updateProject = async (project: Project) => {
+    const updateProject = async (id: string, project: Partial<Project>) => {
         try {
-            const updatedProject = await apiService.updateProject(project);
-            setProjects(prev => prev.map(p => (p.id === updatedProject.id ? updatedProject : p)));
-            toast({ title: "Success", description: "Project updated successfully." });
+            const updatedProject = await apiService.updateProject(id, project);
+            setProjects(prev => prev.map(p => (p.id === id ? coerceDates(updatedProject) : p)));
+            toast({ title: "Project updated", description: "The project has been updated successfully." });
         } catch (error) {
-            toast({ variant: "destructive", title: "Error updating project", description: (error as Error).message });
+            toast({ title: "Error updating project", description: "Could not update the project. Please try again.", variant: "destructive" });
             throw error;
         }
     };
@@ -80,39 +90,20 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         try {
             await apiService.deleteProject(id);
             setProjects(prev => prev.filter(p => p.id !== id));
-            toast({ title: "Success", description: "Project deleted successfully." });
+            toast({ title: "Project deleted", description: "The project has been deleted successfully." });
         } catch (error) {
-            toast({ variant: "destructive", title: "Error deleting project", description: (error as Error).message });
+            toast({ title: "Error deleting project", description: "Could not delete the project. Please try again.", variant: "destructive" });
+            throw error;
         }
     };
 
-    const handleFormSubmit = async (data: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>, selectedProject: Project | null) => {
-        if (selectedProject?.id) {
-            // When updating, we need to preserve the original createdAt date
-            const projectToUpdate = {
-                ...data,
-                id: selectedProject.id,
-                createdAt: selectedProject.createdAt,
-                // The updatedAt will be set by the server, but we can update it on the client for immediate feedback
-                updatedAt: new Date()
-            };
-            await updateProject(coerceDates(projectToUpdate));
-        } else {
-            await addProject(data);
-        }
-    };
-
-    return (
-        <ProjectContext.Provider value={{ projects, isLoading, addProject, updateProject, deleteProject }}>
-            {children}
-        </ProjectContext.Provider>
-    );
+    return <ProjectContext.Provider value={{ projects, isLoading, addProject, updateProject, deleteProject }}>{children}</ProjectContext.Provider>;
 }
 
-export function useProjects() {
+export const useProjects = () => {
     const context = useContext(ProjectContext);
     if (context === undefined) {
         throw new Error("useProjects must be used within a ProjectProvider");
     }
     return context;
-}
+};

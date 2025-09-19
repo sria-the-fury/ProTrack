@@ -12,8 +12,8 @@ export class ApiService {
         return addProjectApi(project);
     }
 
-    updateProject(project: Project): Promise<Project> {
-        return updateProjectApi(project);
+    updateProject(id: string, project: Partial<Project>): Promise<Project> {
+        return updateProjectApi(id, project);
     }
 
     deleteProject(id: string): Promise<void> {
