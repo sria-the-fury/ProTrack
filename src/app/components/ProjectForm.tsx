@@ -66,7 +66,7 @@ export function ProjectForm({ project, onSubmit, onFinished }: ProjectFormProps)
         },
     });
 
-    const { isSubmitting } = form.formState;
+    const { isSubmitting, isDirty } = form.formState;
 
     const handleFormSubmit = async (data: ProjectFormData) => {
         try {
@@ -161,6 +161,7 @@ export function ProjectForm({ project, onSubmit, onFinished }: ProjectFormProps)
                                             mode="single"
                                             selected={field.value ? new Date(field.value) : undefined}
                                             onSelect={field.onChange}
+                                            disabled={{ before: new Date() }}
                                             initialFocus
                                         />
                                     </PopoverContent>
@@ -174,7 +175,8 @@ export function ProjectForm({ project, onSubmit, onFinished }: ProjectFormProps)
                     <Button type="button" variant="outline" onClick={onFinished} disabled={isSubmitting}>
                         Cancel
                     </Button>
-                    <Button type="submit" className="bg-accent text-accent-foreground hover:bg-accent/90" disabled={isSubmitting}>
+                    <Button type="submit" className="bg-accent text-accent-foreground hover:bg-accent/90"
+                            disabled={isSubmitting || (!!project && !isDirty)}>
                         {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                         {project ? "Save Changes" : "Create Project"}
                     </Button>
