@@ -1,79 +1,74 @@
-import { NextResponse } from "next/server";
+
+import { NextRequest, NextResponse } from "next/server";
 import { projectSchema } from "@/lib/types";
 import { z } from "zod";
-import { db } from "@/lib/firebase";
-import { doc, getDoc, updateDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
-
-type Params = {
-    params: {
-        id: string;
-    };
-};
+import { projectRepository } from "@/lib/ProjectRepository";
 
 export const dynamic = 'force-dynamic';
 
-// GET a single project by ID
-export async function GET(request: Request, { params }: Params) {
-    try {
-        const projectDocRef = doc(db, "projects", params.id);
-        const docSnap = await getDoc(projectDocRef);
+// Helper to get ID from URL
+const getIdFromRequest = (request: NextRequest) => {
+    // The URL is structured as /api/projects/[id]
+    const segments = request.nextUrl.pathname.split('/');
+    // The last segment will be the id
+    return segments.pop() || '';
+};
 
-        if (!docSnap.exists()) {
+// GET a single project by ID
+export async function GET(request: NextRequest) {
+    const id = getIdFromRequest(request);
+    try {
+        const project = await projectRepository.getById(id);
+
+        if (!project) {
             return NextResponse.json({ error: "Project not found" }, { status: 404 });
         }
 
-        return NextResponse.json({ id: docSnap.id, ...docSnap.data() });
+        return NextResponse.json(project);
     } catch (error) {
-        console.error("Error fetching project: ", error);
+        console.error(`Error fetching project ${id}: `, error);
         return NextResponse.json({ error: "Failed to fetch project" }, { status: 500 });
     }
 }
 
 // PUT (update) a project
-export async function PUT(request: Request, { params }: Params) {
+export async function PUT(request: NextRequest) {
+    const id = getIdFromRequest(request);
     try {
-        const projectDocRef = doc(db, "projects", params.id);
-        const docSnap = await getDoc(projectDocRef);
-
-        if (!docSnap.exists()) {
-            return NextResponse.json({ error: "Project not found" }, { status: 404 });
-        }
-
         const json = await request.json();
         const validatedData = projectSchema.partial().parse(json);
 
-        const updatedData = {
-            ...validatedData,
-            updatedAt: serverTimestamp(),
-        };
+        const updatedProject = await projectRepository.update(id, validatedData);
 
-        await updateDoc(projectDocRef, updatedData);
+        if (!updatedProject) {
+            return NextResponse.json({ error: "Project not found" }, { status: 404 });
+        }
 
-        return NextResponse.json({ id: params.id, ...updatedData });
+        return NextResponse.json(updatedProject);
 
     } catch (error) {
         if (error instanceof z.ZodError) {
             return NextResponse.json({ error: error.errors }, { status: 400 });
         }
-        console.error("Error updating project: ", error);
+        console.error(`Error updating project ${id}: `, error);
         return NextResponse.json({ error: "An unexpected error occurred." }, { status: 500 });
     }
 }
 
 // DELETE a project
-export async function DELETE(request: Request, { params }: Params) {
+export async function DELETE(request: NextRequest) {
+    const id = getIdFromRequest(request);
     try {
-        const projectDocRef = doc(db, "projects", params.id);
-        const docSnap = await getDoc(projectDocRef);
-
-        if (!docSnap.exists()) {
+        // First, check if the project exists to provide a clear error message
+        const project = await projectRepository.getById(id);
+        if (!project) {
             return NextResponse.json({ error: "Project not found" }, { status: 404 });
         }
 
-        await deleteDoc(projectDocRef);
+        await projectRepository.delete(id);
         return new NextResponse(null, { status: 204 }); // No Content
     } catch (error) {
-        console.error("Error deleting project: ", error);
+        console.error(`Error deleting project ${id}: `, error);
         return NextResponse.json({ error: "Failed to delete project" }, { status: 500 });
     }
 }
